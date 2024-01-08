@@ -12,6 +12,7 @@ namespace Ies7SegReader
     }
 
     private Bitmap? _bitmap = null;
+    private I7SReaderWorker _worker = new I7SReaderWorker();
 
 
     public bool SetBitMapForRead(Bitmap bitmap)
@@ -29,39 +30,13 @@ namespace Ies7SegReader
 
     public string CodeText(int code)
     {
-      string result = "";
-      switch (code)
-      {
-        case 0:
-          result = "Нет ошибки";
-          break;
-        case 1:
-          result = "Чтение не производилось. Картинка не загружена";
-          break;
-        default:
-          result = "Неизвестная ошибка";
-          break;
-      }
-      return result;
+      return _worker.Errors(code);
     }
 
 
     public Result7SReader Read()
     {
-      Result7SReader result = new Result7SReader
-      {
-        S = "",
-        D = 0.0,
-        ErrorCode = 0
-      };
-
-      if (!LoadedBitmab())
-      {
-        result.ErrorCode = 1;
-        return result;
-      }
-
-      return result;
+      return _worker.Read(_bitmap);
     }
   }
 }
