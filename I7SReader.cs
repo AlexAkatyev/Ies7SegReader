@@ -6,8 +6,8 @@ namespace Ies7SegReader
   {
     public struct Result7SReader
     {
-      public string S;
-      public double D;
+      public string Text;
+      public double Data;
       public int ErrorCode;
     }
 

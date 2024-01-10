@@ -2,6 +2,7 @@
 using OpenCvSharp.Extensions;
 using System.Drawing;
 using static Ies7SegReader.I7SReader;
+using Tesseract;
 
 namespace Ies7SegReader
 {
@@ -30,8 +31,8 @@ namespace Ies7SegReader
     {
       Result7SReader result = new Result7SReader
       {
-        S = "",
-        D = 0.0,
+        Text = "",
+        Data = 0.0,
         ErrorCode = 0
       };
 
@@ -41,12 +42,101 @@ namespace Ies7SegReader
         return result;
       }
 
-      // получамем фильтрованную бинарную картинку для анализа
+      // получаем фильтрованную бинарную картинку для анализа
       Mat m = filterAndBinarization(bm);
 
       // проводим анализ
+      result.Text = getTextFromMat(m);
+
+      if (result.Text.Length == 0) // Если ничего не прочитали, а текст есть, надо сделать шире символы
+      {
+        byte[] kernelValues = [ 0, 1, 0,
+                                1, 1, 1,
+                                0, 1, 0 ];
+        Mat kernel1 = new Mat(3, 3, MatType.CV_8UC1, kernelValues);
+        int countIter = m.Height / 10;
+        for (int iter = 0; iter < countIter && result.Text.Length == 0; iter++)
+        {
+          Cv2.Erode(m, m, kernel1); // делается эрозия фона, т.к. фон = 255, а цифра = 0
+          result.Text = getTextFromMat(m);
+        }
+      }
+      string t = result.Text;
+
+      // коррректировка полученной строки
+      result.Text = correctResult(result.Text);
 
       return result;
+    }
+
+
+    private string correctResult(string input)
+    {
+      string result = "";
+      for (int i = 0; i < input.Length; i++)
+      {
+        if (input[i] >= 48
+            && input[i] <= 57)
+          result += input[i];
+        else if (input[i] == '-')
+        {
+          if (i == 0)
+            result += input[i];
+          else
+            result += '.';
+        }
+        else if (input[i] == ','
+            || input[i] == '.')
+          result += '.';
+        else if (input[i] == 'B')
+          result += '8';
+        else if (input[i] == 'g'
+            || input[i] == 'Y')
+          result += '9';
+        else if (input[i] == 'Z'
+            || input[i] == 'C')
+          result += '2';
+        else if (input[i] == 'Q'
+            || input[i] == 'O'
+            || input[i] == 'o'
+            || input[i] == 'D'
+            || input[i] == 'U')
+          result += '0';
+        else if (input[i] == '|'
+            || input[i] == 'I'
+            || input[i] == 'l')
+          result += '1';
+      }
+
+      if (!result.Contains('.'))
+      {
+        if (result.Length > 1
+            && result[0] == '0'
+            && result[1] == '0')
+          result = result.Insert(1, ".");
+        else if (result.Length > 2
+            && result[0] == '-'
+            && result[1] == '0'
+            && result[2] == '0')
+          result = result.Insert(2, ".");
+      }
+
+      return result;
+    }
+
+    private string getTextFromMat(Mat a)
+    {
+      Mat m = new Mat();
+      Cv2.CvtColor(a, m, ColorConversionCodes.GRAY2RGBA);
+      string tempFile = "temp.png";
+      m.SaveImage(tempFile);
+
+      Pix img = Pix.LoadFromFile(tempFile);
+
+      string lang = "7seg";
+      TesseractEngine tesseractEng = new TesseractEngine(@".\tessdata", lang, EngineMode.Default);
+      Page page = tesseractEng.Process(img, PageSegMode.SingleLine); // SingleLine -psm 7 SingleWord -psm 8 +
+      return page.GetText();
     }
 
 
