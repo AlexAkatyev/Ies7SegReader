@@ -32,6 +32,7 @@ namespace Ies7SegReader
       Result7SReader result = new Result7SReader
       {
         Text = "",
+        TextColor = "",
         Data = 0.0,
         ErrorCode = 0
       };
@@ -46,7 +47,7 @@ namespace Ies7SegReader
       Mat m = filterAndBinarization(bm);
 
       // проводим анализ
-      result.Text = getTextFromMat(m);
+      result.Text = getTextFromMat(m, true);
 
       if (result.Text.Length == 0) // Если ничего не прочитали, а текст есть, надо сделать шире символы
       {
@@ -58,13 +59,18 @@ namespace Ies7SegReader
         for (int iter = 0; iter < countIter && result.Text.Length == 0; iter++)
         {
           Cv2.Erode(m, m, kernel1); // делается эрозия фона, т.к. фон = 255, а цифра = 0
-          result.Text = getTextFromMat(m);
+          result.Text = getTextFromMat(m, true);
         }
       }
-      string t = result.Text;
+
+
+      // работа с цветной картинкой
+      Mat c = loadBitmap(bm);
+      result.TextColor = getTextFromMat(c, false);
 
       // коррректировка полученной строки
       result.Text = correctResult(result.Text);
+      result.TextColor = correctResult(result.TextColor);
 
       return result;
     }
@@ -124,10 +130,13 @@ namespace Ies7SegReader
       return result;
     }
 
-    private string getTextFromMat(Mat a)
+    private string getTextFromMat(Mat a, bool isGray)
     {
       Mat m = new Mat();
-      Cv2.CvtColor(a, m, ColorConversionCodes.GRAY2RGBA);
+      if (isGray)
+        Cv2.CvtColor(a, m, ColorConversionCodes.GRAY2RGBA);
+      else
+        m = a;
       string tempFile = "temp.png";
       m.SaveImage(tempFile);
 
@@ -140,7 +149,15 @@ namespace Ies7SegReader
     }
 
 
-    private Mat filterAndBinarization(Bitmap bm)
+    private Mat loadBitmap(Bitmap bm)
+    {
+      // Загрузка картинки
+      Mat inputMaterial = BitmapConverter.ToMat(bm);
+      return inputMaterial;
+    }
+
+
+      private Mat filterAndBinarization(Bitmap bm)
     {
       // Загрузка картинки
       Mat inputMaterial = BitmapConverter.ToMat(bm);
@@ -165,7 +182,46 @@ namespace Ies7SegReader
       correctGamma(inputMaterial, inputMaterial, 0.5);
       Cv2.Threshold(inputMaterial, inputMaterial, 200, 255, ThresholdTypes.Binary);
 
+      // раздвигеам символы друг от друга для удобной работы tesseract
+      //inputMaterial = moveApart(inputMaterial);
+
       return inputMaterial;
+    }
+
+
+    private Mat moveApart(Mat m)
+    {
+      // раздвигание символов
+      int w = m.Width;
+      int h = m.Height;
+      int dx = h / 3;
+      m.GetArray<byte>(out byte[] b);
+      List<byte> vw = new List<byte>(b);
+
+      const byte ONE = 255;
+      const byte ZERO = 0;
+      var getPosLine = (int width, int height, int i, int j, int k) =>
+      {
+        return k * width + i + (j - i) * (height - k) / height;
+      };
+
+      for (int i = w - dx - 1; i > -1; i--)
+        for (int j = i + dx; j >= i; j--)
+        {
+          bool rastrOpen = true;
+          for (int k = 0; k < h; k++)
+            rastrOpen = rastrOpen && vw[getPosLine(w, h, i, j, k)] == ONE;
+          if (rastrOpen)
+          {
+            for (int k = h - 1; k > -1; k--)
+              vw.Insert(getPosLine(w, h, i, j, k), ONE);
+            w += 1;
+          }
+        }
+
+      byte[] aw = vw.ToArray();
+
+      return new Mat(h, w, MatType.CV_8UC1, aw);
     }
 
 
